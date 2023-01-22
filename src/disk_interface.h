@@ -10,7 +10,8 @@
 
 /// Add new physical disk here
 typedef enum {
-	DISK_SD_CARD
+	DISK_SD_CARD = 0,
+	DISK_IDE_DRV0, DISK_IDE_DRV1, DISK_IDE_DRV2, DISK_IDE_DRV3
 } disk_e;
 
 /// Returns the status of the MSD (mass storage device)

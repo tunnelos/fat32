@@ -99,7 +99,7 @@ struct info_s {
 	// Contains the total size of a file or a folder
 	// A folder has 
 	u32 size;
-}
+};
 
 /// The classical generic MBR located at sector zero at a MSD contains four 
 /// partition fields. This structure describe one partition. 
@@ -210,9 +210,6 @@ struct fat_fmt_s {
 /// FSinfo structure
 #define INFO_CLUST_CNT		488
 #define INFO_NEXT_FREE		492
-
-/// File system thread
-void fat32_thread(void* arg);
 
 /// Disk functions
 u8 disk_mount(disk_e disk);

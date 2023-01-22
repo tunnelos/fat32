@@ -4,12 +4,10 @@
 //------------------------------------------------------------------------------
 
 #include "fat32.h"
-#include "board_serial.h"
-#include "board_sd_card.h"
-#include "dynamic_memory.h"
-#include "syscall.h"
-
-#include <stddef.h>
+#define bool unsigned char
+#define size_t long unsigned int
+#include "../../include/stdint.h"
+#include "../../include/stdlib.h"
 
 
 /// Buffer and bitmask used for volume mounting. When a partition on the MSD 
@@ -58,7 +56,6 @@ static u16 fat_load16(const void* src);
 static u8 fat_volume_add(struct volume_s* vol);
 static u8 fat_volume_remove(char letter);
 static u8 fat_search(const u8* bpb);
-static void fat_print_sector(const u8* sector);
 static u8 fat_dir_lfn_cmp(const u8* lfn, const char* name, u32 size);
 static u8 fat_dir_sfn_cmp(const char* sfn, const char* name, u8 size);
 static u8 fat_dir_sfn_crc(const u8* sfn);
@@ -73,32 +70,8 @@ static inline u32 fat_sect_to_clust(struct volume_s* vol, u32 sect);
 static inline u32 fat_clust_to_sect(struct volume_s* vol, u32 clust);
 static fstatus fat_follow_path(struct dir_s* dir, const char* path, u32 length);
 static fstatus fat_get_vol_label(struct volume_s* vol, char* label);
-static void fat_print_info(struct info_s* info);
 static u8 fat_file_addr_resolve(struct file_s* file);
 static fstatus fat_make_entry_chain(struct dir_s* dir, u8 entry_cnt);
-
-
-/// Remove
-static void fat_print_table(struct volume_s* vol, u32 sector) {
-	fat_read(vol, vol->fat_lba + sector);
-	print("\n" ANSI_YELLOW);
-	print("FAT: %d\t", sector * 128);
-	for (u8 i = 0; i < 128;) {
-		u32 curr = fat_load32(vol->buffer + i * 4);
-		
-		print("%h", (u8)(curr >> 24));
-		print("%h", (u8)(curr >> 16));
-		print("%h", (u8)(curr >> 8));
-		print("%h", (u8)(curr));
-		print("   ");
-		if ((i++ % 4) == 0) {
-			print("\n");
-			print("FAT: %d\t", sector * 128 + i);
-			
-		}
-	}
-	print("\n" BLUE);
-}
 
 /// Copies `count` number of bytes from source to destination using byte access
 static void fat_memcpy(const void* src, void* dest, u32 count) {
@@ -168,30 +141,18 @@ static u16 fat_load16(const void* src) {
 	return value;
 }
 
-/// Remove
-static void fat_print_sector(const u8* sector) {
-	for (u32 i = 0; i < 512;) {
-		print("%c", sector[i]);
-		
-		if ((i++ % 32) == 0) {
-			print("\n");
-		}
-	}
-	print("\n");
-}
-
 /// Add a volume to the system volumes and assign a letter to it
 static u8 fat_volume_add(struct volume_s* vol) {
-	if (volume_base == NULL) {
+	if (volume_base == 0) {
 		volume_base = vol; 
 	} else {
 		struct volume_s* vol_it = volume_base;
-		while (vol_it->next != NULL) {
+		while (vol_it->next != 0) {
 			vol_it = vol_it->next;
 		}
 		vol_it->next = vol;
 	}
-	vol->next = NULL;
+	vol->next = 0;
 	
 	// Assign a letter to the volume based on the bitmask
 	for (u8 i = 0; i < 32; i++) {
@@ -208,7 +169,7 @@ static u8 fat_volume_add(struct volume_s* vol) {
 /// memory
 static u8 fat_volume_remove(char letter) {
 	struct volume_s* curr;
-	if (volume_base == NULL) {
+	if (volume_base == 0) {
 		return 0;
 	} else if (volume_base->letter == letter) {
 		curr = volume_base;
@@ -217,7 +178,7 @@ static u8 fat_volume_remove(char letter) {
 		struct volume_s* prev = volume_base;
 		curr = volume_base->next;
 		
-		while (curr != NULL) {
+		while (curr != 0) {
 			if (curr->letter == letter) {
 				break;
 			}
@@ -225,7 +186,7 @@ static u8 fat_volume_remove(char letter) {
 			curr = curr->next;
 		}
 		
-		if (curr == NULL) return 0;
+		if (curr == 0) return 0;
 		prev->next = curr->next;
 	}
 	
@@ -350,7 +311,6 @@ static u8 fat_file_addr_resolve(struct file_s* file) {
 			// Check if the FAT table entry is the EOC
 			u32 eoc_value = new_cluster & 0xFFFFFFF;
 			if ((eoc_value >= 0xFFFFFF8) && (eoc_value <= 0xFFFFFFF)) {
-				print("EOC value: %d\n", eoc_value);
 				return 0;
 			}
 			
@@ -627,7 +587,7 @@ static fstatus fat_follow_path(struct dir_s* dir, const char* path, u32 length) 
 	
 	// Volume object is determined from the first character
 	struct volume_s* vol = volume_get(*path++);
-	if (vol == NULL) {
+	if (vol == 0) {
 		return FSTATUS_NO_VOLUME;
 	}
 	// Rewind the `dir` object to the root directory
@@ -676,15 +636,9 @@ static fstatus fat_follow_path(struct dir_s* dir, const char* path, u32 length) 
 		
 		// Now `frag_ptr` will point to the first character in the name
 		// fragment, and `frag_size` will contain the size
-
-		print("Searching for directory: " ANSI_NORMAL);
-		print_count(frag_ptr, frag_size);
-		print("\n");
-
 		// Search for a matching directory name in the current directory. If
 		// matched, the `fat_dir_search` will update the `dir` pointer as well
 		if (!fat_dir_search(dir, frag_ptr, frag_size)) {
-			print(ANSI_RED "Directory not fount\n" ANSI_NORMAL);
 			return 0;
 		}
 	}	
@@ -728,113 +682,13 @@ static fstatus fat_get_vol_label(struct volume_s* vol, char* label) {
 	}
 }
 
-/// Remove
-/// Print directory information
-static void fat_print_info(struct info_s* info) {
-	print(BLUE);
-	u32 size = info->size;
-	char ext = 0;	
-	u8 ext_cnt = 0;
-	while (size >= 1000) {
-		size /= 1000;
-		ext = file_size_ext[ext_cnt++];
-	}
-	print("%d", size);
-	if (ext) {
-		print("%c", ext);
-	}
-	print("B\t");
-	u16 time = info->w_time;
-	u16 date = info->w_date;
-	
-	print("%d/%d/%d %d:%d\t", 
-		date & 0b11111,
-		(date >> 5) & 0b1111,
-		((date >> 9) & 0b1111111) + 1980,
-		(time >> 11) & 0b11111,
-		(time >> 5) & 0b111111);
-		
-	if (info->attribute & ATTR_DIR) {
-		print("DIR\t");
-	} else {
-		print("\t");
-	}
-	
-	print_count(info->name, info->name_length);
-	print("\n");
-}
-
-
 //------------------------------------------------------------------------------
 // FAT23 file system API
 // This section will implement the file system API exposed to the user
 //------------------------------------------------------------------------------
 
 /// This is the `main` functions that is used to tast the file system
-void fat32_thread(void* arg) {
-	
-	// Configure the hardware
-	board_sd_card_config();
-	
-	// Wait for the SD card to be insterted
-	while (!board_sd_card_get_status());
-	
-	// Try to mount the disk. If this is not working the disk initialize 
-	// functions may be ehh...
-	disk_mount(DISK_SD_CARD);
-	
-	for (u8 i = 0; i < 6; i++) {
-		print("S: %d c: %d\n", cluster_size_lut[i].clust_size, cluster_size_lut[i].sector_cnt);
-	}
-	
-	struct volume_s* tmp = volume_get('C');
-	u32 cluster;
-	
-	fat_get_cluster(tmp, &cluster);
-	fat_table_set(tmp, 33, 0);
-	fat_print_table(tmp, 0);
-
-	// Print all the volumes on the system
-	print(BLUE "Displaying system volumes:\n");
-	struct volume_s* vol = volume_get_first();
-	while (vol) {
-		for (u8 i = 0; i < 11; i++) {
-			if (vol->label[i]) {
-				print("%c", vol->label[i]);
-			}
-		}
-		print(" (%c:)\n", vol->letter);
-		vol = vol->next;
-	}
-	print("\n");
-	
-	
-	// List all directories
-	struct dir_s dir;
-	fat_dir_open(&dir, "C:/alpha/", 0);
-	
-	struct info_s* info = (struct info_s *)dynamic_memory_new(DRAM_BANK_0,
-		sizeof(struct info_s));
-	fstatus status;
-	print("\nListing directories in: C:/alpha\n");
-	do {
-		status = fat_dir_read(&dir, info);
-		
-		if (fat_memcmp(info->name, "uuuuuughh.txt", info->name_length)) {
-			//fat_dir_rename(&dir, "dude", 4);
-		}
-		
-		// Print the information
-		if (status == FSTATUS_OK) {
-			fat_print_info(info);
-		}
-	} while (status != FSTATUS_EOF);
-	print(BLUE "- EOD -\n");
-
-	while (1) {
-		
-	}
-}
+void fat32_thread(void* arg) {}
 
 /// Mounts a physical disk. It checks for a valid FAT32 file system in all
 /// available disk partitions. All valid file system is dynamically allocated
@@ -845,16 +699,24 @@ void fat32_thread(void* arg) {
 u8 disk_mount(disk_e disk) {
 	
 	// Verify that the storage device are present
-	if (!disk_get_status(disk)) return 0;
+	int res = disk_get_status(disk);
+	__serial_write_fmt("stage 1: %d\r\n", __tools_get_cpu() - 1, res);
+	if (!res) return 0;
 	
 	// Initialize the hardware and protocols
-	if (!disk_initialize(disk)) return 0;
+	res = disk_initialize(disk);
+	__serial_write_fmt("stage 2: %d\r\n", __tools_get_cpu() - 1, res);
+	if (!res) return 0;
 	
 	// Read MBR sector at LBA address zero
-	if (!disk_read(disk, mount_buffer, 0, 1)) return 0;
+	res = disk_read(disk, mount_buffer, 0, 1);
+	__serial_write_fmt("stage 3: %d\r\n", __tools_get_cpu() - 1, res);
+	if (!res) return 0;
 
 	// Check the boot signature in the MBR
-	if (fat_load16(mount_buffer + MBR_BOOT_SIG) != MBR_BOOT_SIG_VALUE) {
+	res = fat_load16(mount_buffer + MBR_BOOT_SIG);
+	__serial_write_fmt("stage 3: %d\r\n", __tools_get_cpu() - 1, res);
+	if (res != MBR_BOOT_SIG_VALUE) {
 		return 0;
 	}
 	
@@ -882,7 +744,7 @@ u8 disk_mount(disk_e disk) {
 				
 				// Allocate the file system structure
 				struct volume_s* vol = (struct volume_s *)
-					dynamic_memory_new(DRAM_BANK_0, sizeof(struct volume_s));
+					malloc(sizeof(struct volume_s));
 				
 				// Update FAT32 information
 				vol->sector_size = fat_load16(mount_buffer + BPB_SECTOR_SIZE);
@@ -922,14 +784,14 @@ u8 disk_mount(disk_e disk) {
 u8 disk_eject(disk_e disk) {
 	struct volume_s* vol = volume_get_first();
 	
-	while (vol != NULL) {
+	while (vol != 0) {
 		
 		// Remove all volumes which matches the `disk` number
 		if (vol->disk == disk) {
 			if (!fat_volume_remove(vol->letter)) {
 				return 0;
 			}
-			dynamic_memory_free(vol);
+			free(vol);
 		}
 		vol = vol->next;
 	}
@@ -937,7 +799,7 @@ u8 disk_eject(disk_e disk) {
 }
 
 /// Get the first volume in the system. If no volumes are present it return
-/// NULL
+/// 0
 struct volume_s* volume_get_first(void) {
 	return volume_base;
 }
@@ -946,13 +808,13 @@ struct volume_s* volume_get_first(void) {
 struct volume_s* volume_get(char letter) {
 	
 	struct volume_s* vol = volume_base;
-	while (vol != NULL) {
+	while (vol != 0) {
 		if (vol->letter == letter) {
 			return vol;
 		}
 		vol = vol->next;
 	}
-	return NULL;
+	return 0;
 }
 
 /// Set the volume label in the BPB SFN entry
@@ -1114,7 +976,6 @@ fstatus fat_dir_rename(struct dir_s* dir, const char* name, u8 length) {
 		name_length++;
 	}
 	
-	print("Name length: %d\n", name_length);
 	u8 entries_req = 1;
 	if (name_length > 8) {
 		entries_req = (length / 13) - 1;
@@ -1135,7 +996,6 @@ fstatus fat_dir_rename(struct dir_s* dir, const char* name, u8 length) {
 	} else {
 		// Enough entry are present
 	}
-	print("Ent req: %d\nEnt pres: %d\n", entries_req, entries_pres);
 }
 
 /// Open a file and return the file object. It takes in a global path.
@@ -1176,7 +1036,6 @@ fstatus fat_file_open(struct file_s* file, const char* path, u16 length) {
 	file->vol = dir.vol;
 	file->size = dir.size;
 	
-	print(ANSI_RED "File size: %d\n" ANSI_NORMAL, file->size);
 	return FSTATUS_OK;
 }
 
